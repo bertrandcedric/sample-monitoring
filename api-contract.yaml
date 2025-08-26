@@ -1,0 +1,278 @@
+openapi: 3.0.1
+info:
+  title: Kafka Monitor API
+  description: Simplified Kafka cluster monitoring REST API providing health status, metrics, topics information, and consumer group details
+  contact:
+    name: Kafka Monitor
+    url: http://localhost:8081
+  version: 1.0.0
+servers:
+  - url: http://localhost:8081
+    description: Local Development Server
+tags:
+  - name: Kafka Metrics
+    description: Kafka cluster monitoring endpoints
+paths:
+  /api/metrics/topics:
+    get:
+      tags:
+        - Kafka Metrics
+      summary: Get topics information
+      description: Returns detailed information about Kafka topics including topic list and partition statistics
+      operationId: getTopicInformation
+      responses:
+        '200':
+          description: Successfully retrieved topics information
+          content:
+            'application/json':
+              schema:
+                $ref: '#/components/schemas/TopicsResponse'
+        '500':
+          description: Internal server error
+          content:
+            'application/json':
+              schema:
+                $ref: '#/components/schemas/TopicsResponse'
+  /api/metrics/kafka:
+    get:
+      tags:
+        - Kafka Metrics
+      summary: Get Kafka cluster metrics
+      description: Returns comprehensive Kafka cluster metrics including broker count, topic count, partition details, and critical alerts
+      operationId: getKafkaMetrics
+      responses:
+        '200':
+          description: Successfully retrieved Kafka metrics
+          content:
+            'application/json':
+              schema:
+                $ref: '#/components/schemas/KafkaMetricsResponse'
+        '500':
+          description: Internal server error
+          content:
+            'application/json':
+              schema:
+                $ref: '#/components/schemas/KafkaMetricsResponse'
+  /api/metrics/health:
+    get:
+      tags:
+        - Kafka Metrics
+      summary: Get health status
+      description: Returns the health status of the application and Kafka cluster
+      operationId: getHealthStatus
+      responses:
+        '200':
+          description: Successfully retrieved health status
+          content:
+            'application/json':
+              schema:
+                $ref: '#/components/schemas/HealthStatusResponse'
+        '500':
+          description: Internal server error - application or cluster is down
+          content:
+            'application/json':
+              schema:
+                $ref: '#/components/schemas/HealthStatusResponse'
+  /api/metrics/consumer-groups:
+    get:
+      tags:
+        - Kafka Metrics
+      summary: Get consumer group metrics
+      description: Returns detailed metrics for all consumer groups including lag information and partition details
+      operationId: getConsumerGroupMetrics
+      responses:
+        '200':
+          description: Successfully retrieved consumer group metrics
+          content:
+            'application/json':
+              schema:
+                $ref: '#/components/schemas/ConsumerGroupsResponse'
+        '500':
+          description: Internal server error
+          content:
+            'application/json':
+              schema:
+                $ref: '#/components/schemas/ConsumerGroupsResponse'
+components:
+  schemas:
+    TopicDetails:
+      type: object
+      properties:
+        totalPartitions:
+          type: integer
+          description: Total number of partitions across all topics
+          format: int32
+          example: 15
+        averagePartitionsPerTopic:
+          type: number
+          description: Average partitions per topic
+          format: double
+          example: 3.0
+        maxPartitions:
+          type: integer
+          description: Maximum partitions in a single topic
+          format: int32
+          example: 6
+        minPartitions:
+          type: integer
+          description: Minimum partitions in a single topic
+          format: int32
+          example: 1
+      description: Topic partition details
+    TopicsResponse:
+      type: object
+      properties:
+        topics:
+          type: array
+          description: List of topic names
+          example:
+            - test-topic
+            - metrics-topic
+            - monitoring-events
+          items:
+            type: string
+            description: Topic name
+        topicDetails:
+          $ref: '#/components/schemas/TopicDetails'
+      description: Topics information response
+    KafkaMetricsResponse:
+      type: object
+      properties:
+        clusterId:
+          type: string
+          description: Kafka cluster ID
+          example: MkU3OEVBNTcwNTJENDM2Qk
+        brokerCount:
+          type: integer
+          description: Number of brokers in the cluster
+          format: int32
+          example: 3
+        topicCount:
+          type: integer
+          description: Total number of topics
+          format: int32
+          example: 5
+        topicDetails:
+          $ref: '#/components/schemas/TopicDetails'
+        underReplicatedPartitions:
+          type: integer
+          description: Number of under-replicated partitions
+          format: int32
+          example: 0
+        offlinePartitions:
+          type: integer
+          description: Number of offline partitions
+          format: int32
+          example: 0
+        clusterHealth:
+          type: string
+          description: Overall cluster health
+          example: HEALTHY
+          enum:
+            - HEALTHY
+            - DEGRADED
+            - CRITICAL
+        status:
+          type: string
+          description: Connection status
+          example: CONNECTED
+          enum:
+            - CONNECTED
+            - DISCONNECTED
+        timestamp:
+          type: integer
+          description: Timestamp of metrics collection
+          format: int64
+          example: 1756214428000
+      description: Kafka cluster metrics response
+    HealthStatusResponse:
+      type: object
+      properties:
+        applicationStatus:
+          type: string
+          description: Application status
+          example: UP
+          enum:
+            - UP
+            - DOWN
+        clusterHealth:
+          type: string
+          description: Cluster health status
+          example: HEALTHY
+          enum:
+            - HEALTHY
+            - UNKNOWN
+        error:
+          type: string
+          description: Error message if any
+          example: Connection timeout
+      description: Health status response
+    ConsumerGroup:
+      type: object
+      properties:
+        groupId:
+          type: string
+          description: Consumer group ID
+          example: kafka-monitor
+        state:
+          type: string
+          description: Consumer group state
+          example: Stable
+          enum:
+            - Stable
+            - Dead
+            - PreparingRebalance
+            - CompletingRebalance
+            - Empty
+        memberCount:
+          type: integer
+          description: Number of members in the group
+          format: int32
+          example: 1
+        coordinator:
+          type: string
+          description: Coordinator broker
+          example: localhost:9092
+        totalLag:
+          type: integer
+          description: Total lag across all partitions
+          format: int64
+          example: 156
+        partitions:
+          type: array
+          description: Partition-level details
+          items:
+            $ref: '#/components/schemas/ConsumerPartition'
+      description: Consumer group information
+    ConsumerGroupsResponse:
+      type: object
+      properties:
+        totalGroups:
+          type: integer
+          description: Total number of consumer groups
+          format: int32
+          example: 3
+        consumerGroups:
+          type: array
+          description: List of consumer group details
+          items:
+            $ref: '#/components/schemas/ConsumerGroup'
+      description: Consumer groups metrics response
+    ConsumerPartition:
+      type: object
+      properties:
+        topic:
+          type: string
+          description: Topic name
+          example: test-topic
+        partition:
+          type: integer
+          description: Partition number
+          format: int32
+          example: 0
+        lag:
+          type: integer
+          description: Consumer lag for this partition
+          format: int64
+          example: 42
+      description: Consumer group partition details

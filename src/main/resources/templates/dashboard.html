@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simplified Kafka Monitor Dashboard</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+        }
+        .card h2 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .metric:last-child {
+            border-bottom: none;
+        }
+        .metric-label {
+            font-weight: 600;
+            color: #555;
+        }
+        .metric-value {
+            font-weight: bold;
+            color: #667eea;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status.up {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status.down {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        .refresh-btn:hover {
+            background: #5a6fd8;
+        }
+        .loading {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+        }
+        .error {
+            color: #721c24;
+            background-color: #f8d7da;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .topic-item, .consumer-group-item {
+            background: #f8f9fa;
+            margin: 10px 0;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        .topic-name, .group-name {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .lag-info {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 4px;
+            padding: 8px;
+            margin-top: 8px;
+        }
+        .lag-high {
+            background: #f8d7da;
+            border-color: #f5c6cb;
+        }
+        .lag-normal {
+            background: #d4edda;
+            border-color: #c3e6cb;
+        }
+        .partition-info {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+        .auto-refresh {
+            margin: 10px 0;
+            text-align: center;
+        }
+        .auto-refresh label {
+            margin-right: 10px;
+        }
+        .critical-alert {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            padding: 8px;
+            margin: 5px 0;
+            color: #721c24;
+        }
+        .warning-alert {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 4px;
+            padding: 8px;
+            margin: 5px 0;
+            color: #856404;
+        }
+        .healthy-status {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 4px;
+            padding: 8px;
+            margin: 5px 0;
+            color: #155724;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎯 Simplified Kafka Monitor Dashboard</h1>
+        <p>Basic monitoring of your Kafka cluster and application</p>
+    </div>
+
+    <div class="auto-refresh">
+        <label>
+            <input type="checkbox" id="autoRefresh" checked> Auto-refresh (30s)
+        </label>
+        <button class="refresh-btn" onclick="refreshMetrics()">Refresh Now</button>
+        <span id="lastUpdate"></span>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h2>� Cluster Health</h2>
+            <div id="clusterHealth" class="loading">Loading cluster health...</div>
+        </div>
+
+        <div class="card">
+            <h2>�️ Kafka Metrics</h2>
+            <div id="kafkaMetrics" class="loading">Loading Kafka metrics...</div>
+        </div>
+
+        <div class="card">
+            <h2>📝 Topics Information</h2>
+            <div id="topicsInfo" class="loading">Loading topics...</div>
+        </div>
+
+        <div class="card">
+            <h2>👥 Consumer Groups</h2>
+            <div id="consumerGroups" class="loading">Loading consumer groups...</div>
+        </div>
+    </div>
+
+    <script>
+        let autoRefreshInterval;
+
+        function formatNumber(num) {
+            if (num >= 1000000000) {
+                return (num / 1000000000).toFixed(1) + 'B';
+            }
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
+            }
+            if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            return num.toFixed(2);
+        }
+
+        function formatBytes(bytes) {
+            if (bytes >= 1024 * 1024 * 1024) {
+                return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+            }
+            if (bytes >= 1024 * 1024) {
+                return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+            }
+            if (bytes >= 1024) {
+                return (bytes / 1024).toFixed(2) + ' KB';
+            }
+            return bytes + ' B';
+        }
+
+        function showError(elementId, message) {
+            document.getElementById(elementId).innerHTML = 
+                `<div class="error">Error: ${message}</div>`;
+        }
+
+        async function loadKafkaMetrics() {
+            try {
+                const response = await fetch('/api/metrics/kafka');
+                if (!response.ok) throw new Error('Failed to fetch Kafka metrics');
+                
+                const data = await response.json();
+                
+                let html = `
+                    <div class="metric">
+                        <span class="metric-label">Cluster ID</span>
+                        <span class="metric-value">${data.clusterId || 'N/A'}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Broker Count</span>
+                        <span class="metric-value">${data.brokerCount || 0}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Topic Count</span>
+                        <span class="metric-value">${data.topicCount || 0}</span>
+                    </div>
+                `;
+                
+                // Add topic details if available
+                if (data.topicDetails) {
+                    html += `
+                        <div class="metric">
+                            <span class="metric-label">Total Partitions</span>
+                            <span class="metric-value">${data.topicDetails.totalPartitions || 0}</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Avg Partitions/Topic</span>
+                            <span class="metric-value">${data.topicDetails.averagePartitionsPerTopic ? data.topicDetails.averagePartitionsPerTopic.toFixed(1) : '0'}</span>
+                        </div>
+                    `;
+                }
+
+                // Add critical metrics section
+                if (data.underReplicatedPartitions !== undefined || data.offlinePartitions !== undefined) {
+                    html += `<hr style="margin: 15px 0;">`;
+                    html += `<h3 style="margin: 10px 0; color: #333;">Critical Metrics</h3>`;
+                    
+                    // Under-replicated partitions alert
+                    if (data.underReplicatedPartitions > 0) {
+                        html += `
+                            <div class="critical-alert">
+                                <strong>🚨 CRITICAL:</strong> ${data.underReplicatedPartitions} under-replicated partitions detected!
+                            </div>
+                        `;
+                    } else {
+                        html += `
+                            <div class="healthy-status">
+                                ✅ All partitions are properly replicated
+                            </div>
+                        `;
+                    }
+                    
+                    // Offline partitions alert
+                    if (data.offlinePartitions > 0) {
+                        html += `
+                            <div class="critical-alert">
+                                <strong>💀 CRITICAL:</strong> ${data.offlinePartitions} offline partitions detected!
+                            </div>
+                        `;
+                    } else {
+                        html += `
+                            <div class="healthy-status">
+                                ✅ All partitions are online
+                            </div>
+                        `;
+                    }
+                    
+                    html += `
+                        <div class="metric">
+                            <span class="metric-label">Cluster Health</span>
+                            <span class="metric-value ${data.clusterHealth === 'HEALTHY' ? 'status up' : 'status down'}">${data.clusterHealth || 'UNKNOWN'}</span>
+                        </div>
+                    `;
+                }
+                
+                html += `
+                    <div class="metric">
+                        <span class="metric-label">Status</span>
+                        <span class="metric-value ${data.status === 'CONNECTED' ? 'status up' : 'status down'}">${data.status || 'UNKNOWN'}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Last Updated</span>
+                        <span class="metric-value">${data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString()}</span>
+                    </div>
+                `;
+                
+                document.getElementById('kafkaMetrics').innerHTML = html;
+            } catch (error) {
+                showError('kafkaMetrics', error.message);
+            }
+        }
+
+        async function loadHealthStatus() {
+            try {
+                const response = await fetch('/api/metrics/health');
+                if (!response.ok) throw new Error('Failed to fetch health status');
+                
+                const data = await response.json();
+                const appStatusClass = data.applicationStatus === 'UP' ? 'up' : 'down';
+                const clusterStatusClass = data.clusterHealth === 'HEALTHY' ? 'up' : 'down';
+                
+                document.getElementById('clusterHealth').innerHTML = `
+                    <div class="metric">
+                        <span class="metric-label">Application Status</span>
+                        <span class="status ${appStatusClass}">${data.applicationStatus}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Cluster Status</span>
+                        <span class="status ${clusterStatusClass}">${data.clusterHealth || 'UNKNOWN'}</span>
+                    </div>
+                    ${data.error ? `
+                    <div class="metric">
+                        <span class="metric-label">Error</span>
+                        <span class="metric-value error">${data.error}</span>
+                    </div>
+                    ` : ''}
+                `;
+            } catch (error) {
+                showError('clusterHealth', error.message);
+            }
+        }
+
+        async function loadTopicsInfo() {
+            try {
+                const response = await fetch('/api/metrics/topics');
+                if (!response.ok) throw new Error('Failed to fetch topics information');
+                
+                const data = await response.json();
+                
+                let html = `
+                    <div class="metric">
+                        <span class="metric-label">Total Topics</span>
+                        <span class="metric-value">${data.topics?.length || 0}</span>
+                    </div>
+                `;
+                
+                if (data.topicDetails) {
+                    html += `
+                        <div class="metric">
+                            <span class="metric-label">Total Partitions</span>
+                            <span class="metric-value">${data.topicDetails.totalPartitions || 0}</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Avg Partitions/Topic</span>
+                            <span class="metric-value">${data.topicDetails.averagePartitionsPerTopic ? data.topicDetails.averagePartitionsPerTopic.toFixed(1) : '0'}</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Max Partitions</span>
+                            <span class="metric-value">${data.topicDetails.maxPartitions || 0}</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Min Partitions</span>
+                            <span class="metric-value">${data.topicDetails.minPartitions || 0}</span>
+                        </div>
+                    `;
+                }
+                
+                // List topics if available
+                if (data.topics && data.topics.length > 0) {
+                    html += `<hr style="margin: 15px 0;"><h3 style="margin: 10px 0; color: #333;">Topic List</h3>`;
+                    data.topics.forEach(topic => {
+                        html += `
+                            <div class="metric">
+                                <span class="metric-label">${topic}</span>
+                                <span class="metric-value">Active</span>
+                            </div>
+                        `;
+                    });
+                }
+                
+                document.getElementById('topicsInfo').innerHTML = html;
+            } catch (error) {
+                showError('topicsInfo', error.message);
+            }
+        }
+
+
+
+        async function loadConsumerGroups() {
+            try {
+                const response = await fetch('/api/metrics/consumer-groups');
+                if (!response.ok) throw new Error('Failed to fetch consumer groups');
+                
+                const data = await response.json();
+                
+                if (!data.consumerGroups || data.consumerGroups.length === 0) {
+                    document.getElementById('consumerGroups').innerHTML = 
+                        '<p>No consumer groups found</p>';
+                    return;
+                }
+
+                let html = `
+                    <div class="metric">
+                        <span class="metric-label">Total Groups</span>
+                        <span class="metric-value">${data.totalGroups}</span>
+                    </div>
+                `;
+
+                data.consumerGroups.forEach(group => {
+                    const totalLag = group.totalLag || 0;
+                    const lagClass = totalLag > 1000 ? 'lag-high' : (totalLag > 100 ? 'lag-info' : 'lag-normal');
+                    
+                    html += `
+                        <div class="consumer-group-item">
+                            <div class="group-name">${group.groupId}</div>
+                            <div class="metric">
+                                <span class="metric-label">State</span>
+                                <span class="metric-value">${group.state}</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Members</span>
+                                <span class="metric-value">${group.memberCount || 0}</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Coordinator</span>
+                                <span class="metric-value">${group.coordinator || 'N/A'}</span>
+                            </div>
+                            <div class="lag-info ${lagClass}">
+                                <div class="metric">
+                                    <span class="metric-label">Total Lag</span>
+                                    <span class="metric-value">${totalLag.toLocaleString()}</span>
+                                </div>
+                            </div>
+                    `;
+                    
+                    if (group.partitions && group.partitions.length > 0) {
+                        html += '<div class="partition-info">Partition Details:<br>';
+                        group.partitions.forEach(partition => {
+                            html += `• ${partition.topic}[${partition.partition}]: lag ${partition.lag}<br>`;
+                        });
+                        html += '</div>';
+                    }
+                    
+                    html += '</div>';
+                });
+                
+                document.getElementById('consumerGroups').innerHTML = html;
+            } catch (error) {
+                showError('consumerGroups', error.message);
+            }
+        }
+
+
+
+        async function refreshMetrics() {
+            await Promise.all([
+                loadKafkaMetrics(),
+                loadHealthStatus(),
+                loadTopicsInfo(),
+                loadConsumerGroups()
+            ]);
+            
+            document.getElementById('lastUpdate').textContent = 
+                `Last updated: ${new Date().toLocaleTimeString()}`;
+        }
+
+        function setupAutoRefresh() {
+            const checkbox = document.getElementById('autoRefresh');
+            
+            if (checkbox.checked) {
+                autoRefreshInterval = setInterval(refreshMetrics, 30000);
+            } else {
+                clearInterval(autoRefreshInterval);
+            }
+        }
+
+        document.getElementById('autoRefresh').addEventListener('change', setupAutoRefresh);
+
+        // Initial load
+        refreshMetrics();
+        setupAutoRefresh();
+    </script>
+</body>
+</html>
